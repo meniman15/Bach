@@ -14,10 +14,10 @@ const seedData = {
     { id: "combat",   name: "קרב מגע" },
   ],
   sessions: [
-    { id: "range-1",    typeId: "shooting", unitId: "unit-1", name: "מטווח 1" },
-    { id: "range-night",typeId: "shooting", unitId: "unit-1", name: "מטווח לילה" },
-    { id: "run-3k",     typeId: "fitness",  unitId: "unit-1", name: "ריצת 3 ק״מ" },
-    { id: "check-07",   typeId: "combat",   unitId: "unit-1", name: "צ׳ק 07" },
+    { id: "range-1",    typeId: "shooting", unitId: "unit-1", name: "מטווח 1", soldiers: ["s-1", "s-2"] },
+    { id: "range-night",typeId: "shooting", unitId: "unit-1", name: "מטווח לילה", soldiers: ["s-2", "s-3", "s-4"] },
+    { id: "run-3k",     typeId: "fitness",  unitId: "unit-1", name: "ריצת 3 ק״מ", soldiers: ["s-1", "s-3", "s-5"] },
+    { id: "check-07",   typeId: "combat",   unitId: "unit-1", name: "צ׳ק 07", soldiers: ["s-4", "s-5"] },
   ],
   soldiers: [
     { id: "s-1", name: "אביב לוי",   personalNumber: "8123456", unitId: "unit-1" },
@@ -109,8 +109,10 @@ class OrigamiClient {
       const gradedIds = new Set(
         saved.filter((g) => g.sessionId === sessionId).map((g) => g.soldierId),
       );
+      const session = seedData.sessions.find((s) => s.id === sessionId);
+      const sessionSoldierIds = new Set(session?.soldiers || []);
       return seedData.soldiers.filter(
-        (s) => s.unitId === unitId && !gradedIds.has(s.id),
+        (s) => s.unitId === unitId && sessionSoldierIds.has(s.id) && !gradedIds.has(s.id),
       );
     }
     const res = await fetch(`${API_BASE}/ungraded-soldiers?sessionId=${encodeURIComponent(sessionId)}`);
@@ -133,9 +135,10 @@ class OrigamiClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: payload.grades[0]?.sessionId,
+        trainingNote: payload.trainingNote,
         grades: payload.grades.map((g) => ({
-          soldierId:  g.soldierId,
-          grade:      g.grade,
+          soldierId: g.soldierId,
+          grade: g.grade,
           groupIndex: g.groupIndex,
         })),
       }),

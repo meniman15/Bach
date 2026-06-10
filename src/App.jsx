@@ -14,6 +14,7 @@ export default function App() {
   const [trainingTypes, setTrainingTypes] = useState([]);
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [soldiers, setSoldiers] = useState([]);
   const [trainingCompleted, setTrainingCompleted] = useState(false);
@@ -41,14 +42,32 @@ export default function App() {
   useEffect(() => {
     if (!commander || !selectedTypeId) return undefined;
 
-    runSafely(async () => {
-      const nextSessions = await origamiClient.getTrainingSessions({
+    let cancelled = false;
+    setSessionsLoading(true);
+    setSessions([]);
+    setSelectedSessionId("");
+
+    origamiClient
+      .getTrainingSessions({
         typeId: selectedTypeId,
         unitId: commander.unitId,
+      })
+      .then((nextSessions) => {
+        if (cancelled) return;
+        setSessions(nextSessions);
+        setSelectedSessionId(nextSessions[0]?.id || "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        notify(error.message || "שגיאה בטעינת אימונים", true);
+      })
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
       });
-      setSessions(nextSessions);
-      setSelectedSessionId(nextSessions[0]?.id || "");
-    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [commander, selectedTypeId]);
 
   async function requestOtp(event) {
@@ -186,6 +205,7 @@ export default function App() {
           trainingTypes={trainingTypes}
           selectedTypeId={selectedTypeId}
           sessions={sessions}
+          sessionsLoading={sessionsLoading}
           selectedSessionId={selectedSessionId}
           isBusy={isBusy}
           onLogout={logout}
@@ -308,6 +328,7 @@ function TrainingScreen({
   trainingTypes,
   selectedTypeId,
   sessions,
+  sessionsLoading,
   selectedSessionId,
   isBusy,
   onLogout,
@@ -344,10 +365,12 @@ function TrainingScreen({
           <select
             value={selectedSessionId}
             required
-            disabled={!sessions.length}
+            disabled={sessionsLoading || !sessions.length}
             onChange={(event) => onSessionChange(event.target.value)}
           >
-            {sessions.length ? (
+            {sessionsLoading ? (
+              <option value="">טוען אימונים...</option>
+            ) : sessions.length ? (
               sessions.map((session) => (
                 <option key={session.id} value={session.id}>
                   {session.name}
@@ -359,7 +382,7 @@ function TrainingScreen({
           </select>
         </label>
 
-        <button className="primary-button bottom-action" type="submit" disabled={isBusy}>
+        <button className="primary-button bottom-action" type="submit" disabled={isBusy || sessionsLoading}>
           המשך להזנה
         </button>
       </form>

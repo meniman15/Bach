@@ -94,18 +94,26 @@ async function findCommander(commanderId, phone) {
  * Uses the update_instance_fields endpoint with filter + field array format.
  */
 async function updateField(instanceId, fieldDataName, value) {
+  return updateInstanceFields(ENTITY, instanceId, [[fieldDataName, value, 0]]);
+}
+
+/**
+ * Origami update_instance_fields: filter + field triplets [field_data_name, value, group_index].
+ * @see https://documenter.getpostman.com/view/2653695/2s93kz65gS#0646b01f-1752-4355-802b-cb55c7b9bd7e
+ */
+async function updateInstanceFields(entityDataName, instanceId, fieldUpdates) {
   const payload = {
-    entity_data_name: ENTITY,
+    entity_data_name: entityDataName,
     filter: [["_id", "=", instanceId]],
-    field: [[fieldDataName, value, 0]],
+    field: fieldUpdates,
   };
-  console.log("Update payload:", JSON.stringify(payload, null, 2));
 
   const res = await origamiPost("/entities/api/update_instance_fields/format/json", payload);
   const json = await res.json();
-  console.log("Update response:", JSON.stringify(json, null, 2));
 
   if (json?.error) throw new Error(json.error.message || "Update failed");
+  if (json?.success !== "ok") throw new Error("Update failed");
+
   return json;
 }
 
@@ -248,7 +256,7 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
     // Fetch the training session instance to get its soldier group
     const sessionRes = await origamiPost("/entities/api/instance_data/format/json", {
       entity_data_name: "e_166",
-      filters: [{ field: "_id", value: sessionId, operator: "=" }],
+      filter: [["_id", "=", sessionId]],
     });
     const sessionJson = await sessionRes.json();
     if (sessionJson?.error) throw new Error(sessionJson.error.message || "Origami error");
@@ -262,22 +270,23 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
     const soldierGroup = fieldGroups.find((g) => g.field_group_data?.group_data_name === "g_309");
     const rows = soldierGroup?.fields_data || [];
 
-    // Each row is an array of fields — filter to ungraded (fld_1800 empty)
-    const ungradedRows = rows.filter((row) => {
+    // Each row is an array of fields — group_index is the row's position in fields_data
+    const soldierInstanceIds = [];
+    rows.forEach((row) => {
       const gradeField = row.find((f) => f.field_data_name === "fld_1800");
-      const val = gradeField?.value;
-      return val === "" || val === null || val === undefined;
-    });
+      const gradeValue = gradeField?.value;
+      if (gradeValue !== "" && gradeValue !== null && gradeValue !== undefined) return;
 
-    // Collect soldier instance IDs and group_index from each row
-    const soldierInstanceIds = ungradedRows
-      .map((row) => {
-        const soldierField = row.find((f) => f.field_data_name === "fld_1798");
-        return soldierField?.value?.instance_id
-          ? { instanceId: soldierField.value.instance_id, groupIndex: soldierField.group_index }
-          : null;
-      })
-      .filter(Boolean);
+      const soldierField = row.find((f) => f.field_data_name === "fld_1798");
+      const instanceId = soldierField?.value?.instance_id;
+      const dbGroupIndex = soldierField?.group_index;
+      if (instanceId) {
+        soldierInstanceIds.push({
+          instanceId,
+          groupIndex: typeof dbGroupIndex === "number" ? dbGroupIndex : 0,
+        });
+      }
+    });
 
     if (!soldierInstanceIds.length) return res.json([]);
 
@@ -317,34 +326,28 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
 });
 
 app.post("/api/save-grades", async (req, res) => {
-  const { sessionId, grades } = req.body || {};
-  // grades: [{ soldierId, grade, groupIndex }]
+  const { sessionId, grades, trainingNote } = req.body || {};
   if (!sessionId || !Array.isArray(grades) || !grades.length) {
     return res.status(400).json({ error: "sessionId and grades are required" });
   }
 
   try {
-    // Update each soldier row in the repeatable group using update_instance_fields
-    // field array format: [field_data_name, value, group_index]
-    const fieldUpdates = grades.map(({ grade, groupIndex }) => [
-      "fld_1800", String(grade), groupIndex,
-    ]);
+    let saved = 0;
 
-    const payload = {
-      entity_data_name: "e_166",
-      filter: [["_id", "=", sessionId]],
-      field: fieldUpdates,
-    };
+    for (const { grade, groupIndex } of grades) {
+      const updateJson = await updateInstanceFields("e_166", sessionId, [
+        ["fld_1800", String(grade), groupIndex],
+      ]);
+      saved += updateJson.results?.fields_updated_total || 0;
+    }
 
-    console.log("save-grades payload:", JSON.stringify(payload, null, 2));
+    if (typeof trainingNote === "string" && trainingNote.trim()) {
+      await updateInstanceFields("e_166", sessionId, [["fld_1789", trainingNote.trim(), 0]]);
+    }
 
-    const updateRes = await origamiPost("/entities/api/update_instance_fields/format/json", payload);
-    const updateJson = await updateRes.json();
-    console.log("save-grades response:", JSON.stringify(updateJson, null, 2));
+    if (saved === 0) throw new Error("לא עודכנו ציונים");
 
-    if (updateJson?.error) throw new Error(updateJson.error.message || "Update failed");
-
-    return res.json({ saved: grades.length });
+    return res.json({ saved });
   } catch (err) {
     console.error("save-grades error:", err.message);
     return res.status(500).json({ error: err.message });
