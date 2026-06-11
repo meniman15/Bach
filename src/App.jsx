@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { origamiClient } from "./services/origamiClient.js";
+import { origamiClient } from "./services/origamiClient";
 
 const emptyLogin = {
   commanderId: "",
@@ -414,7 +414,7 @@ function GradesScreen({
         <div>
           <p className="eyebrow">{selectedType.name}</p>
           <h2 id="grades-title">
-            {selectedSession.name} - {commander.unitName}
+            {selectedSession.name}
           </h2>
         </div>
       </header>

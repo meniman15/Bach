@@ -11,9 +11,9 @@ for (const line of lines) {
   if (key && rest.length) process.env[key.trim()] = rest.join("=").trim();
 }
 
-const BASE  = process.env.VITE_ORIGAMI_BASE_URL;
-const USER  = process.env.VITE_ORIGAMI_USERNAME;
-const SEC   = process.env.VITE_ORIGAMI_API_SECRET;
+const BASE = process.env.VITE_ORIGAMI_BASE_URL;
+const USER = process.env.VITE_ORIGAMI_USERNAME;
+const SEC = process.env.VITE_ORIGAMI_API_SECRET;
 
 async function post(path, body) {
   const res = await fetch(`${BASE}${path}`, {

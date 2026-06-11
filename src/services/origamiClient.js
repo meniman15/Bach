@@ -46,15 +46,26 @@ class OrigamiClient {
   }
 
   async _proxyPost(path, body) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || `שגיאת שרת (${res.status})`);
-    return json;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  // Safely parse response body, handling empty responses
+  let json = {};
+  const text = await res.text();
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      // If parsing fails, retain empty object
+      json = {};
+    }
   }
+  if (!res.ok) throw new Error(json.error || `שגיאת שרת (${res.status})`);
+  return json;
+}
 
   // -------------------------------------------------------------------------
   // Auth
