@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { origamiClient } from "./services/origamiClient";
 
 const emptyLogin = {
-  commanderId: "",
   phone: "",
   otp: "",
 };
@@ -11,18 +10,25 @@ export default function App() {
   const [screen, setScreen] = useState("login");
   const [login, setLogin] = useState(emptyLogin);
   const [commander, setCommander] = useState(null);
+  const [topics, setTopics] = useState([]);
+  const [selectedTopicId, setSelectedTopicId] = useState("");
   const [trainingTypes, setTrainingTypes] = useState([]);
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [soldiers, setSoldiers] = useState([]);
-  const [trainingCompleted, setTrainingCompleted] = useState(false);
+  const [trainingDate, setTrainingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [trainingNote, setTrainingNote] = useState("");
   const [grades, setGrades] = useState({});
   const [toast, setToast] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [typesLoading, setTypesLoading] = useState(false);
 
+  const selectedTopic = useMemo(
+    () => topics.find((topic) => topic.id === selectedTopicId),
+    [selectedTopicId, topics],
+  );
   const selectedType = useMemo(
     () => trainingTypes.find((type) => type.id === selectedTypeId),
     [selectedTypeId, trainingTypes],
@@ -39,6 +45,38 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  // When topic changes, reload training types filtered by that topic
+  useEffect(() => {
+    if (!selectedTopicId) {
+      setTrainingTypes([]);
+      setSelectedTypeId("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setTypesLoading(true);
+    setTrainingTypes([]);
+    setSelectedTypeId("");
+
+    origamiClient
+      .getTrainingTypes({ topicId: selectedTopicId })
+      .then((nextTypes) => {
+        if (cancelled) return;
+        setTrainingTypes(nextTypes);
+        setSelectedTypeId(nextTypes[0]?.id || "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        notify(error.message || "שגיאה בטעינת סוגי אימון", true);
+      })
+      .finally(() => {
+        if (!cancelled) setTypesLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedTopicId]);
+
+  // When training type changes, reload sessions
   useEffect(() => {
     if (!commander || !selectedTypeId) return undefined;
 
@@ -74,7 +112,6 @@ export default function App() {
     event.preventDefault();
     await runSafely(async () => {
       await origamiClient.requestOtp({
-        commanderId: login.commanderId.trim(),
         phone: login.phone.trim(),
       });
       setScreen("otp");
@@ -86,14 +123,13 @@ export default function App() {
     event.preventDefault();
     await runSafely(async () => {
       const verifiedCommander = await origamiClient.verifyOtp({
-        commanderId: login.commanderId.trim(),
         phone: login.phone.trim(),
         code: login.otp.trim(),
       });
-      const types = await origamiClient.getTrainingTypes();
+      const nextTopics = await origamiClient.getTopics();
       setCommander(verifiedCommander);
-      setTrainingTypes(types);
-      setSelectedTypeId(types[0]?.id || "");
+      setTopics(nextTopics);
+      setSelectedTopicId(nextTopics[0]?.id || "");
       setScreen("training");
     });
   }
@@ -101,27 +137,19 @@ export default function App() {
   async function openGradesScreen(event) {
     event.preventDefault();
 
-    if (!selectedSession) {
-      notify("אין אימון זמין לסוג שנבחר", true);
+    if (!selectedTypeId) {
+      notify("אין סוג אימון נבחר", true);
       return;
     }
 
     await runSafely(async () => {
-      const allSoldiers = await origamiClient.getUngradedSoldiers({
-        sessionId: selectedSession.id,
+      const allSoldiers = await origamiClient.getUnitSoldiers({
         unitId: commander.unitId,
       });
       setSoldiers(allSoldiers);
-      // Pre-populate grades map with any grade the server already has
-      const initialGrades = {};
-      allSoldiers.forEach((s) => {
-        if (s.grade !== null && s.grade !== undefined) {
-          initialGrades[s.id] = { grade: String(s.grade), note: s.note || "" };
-        }
-      });
-      setGrades(initialGrades);
-      setTrainingCompleted(false);
+      setGrades({});
       setTrainingNote("");
+      setTrainingDate(new Date().toISOString().slice(0, 10));
       setScreen("grades");
     });
   }
@@ -134,42 +162,41 @@ export default function App() {
       return;
     }
 
-    const payloadGrades = soldiers.map((soldier) => ({
-      soldierId: soldier.id,
-      sessionId: selectedSession.id,
-      commanderId: commander.id,
-      grade: Number(grades[soldier.id]?.grade),
-      note: grades[soldier.id]?.note?.trim() || "",
-      groupIndex: soldier.groupIndex,
-      recordedAt: new Date().toISOString(),
-    }));
+    if (!trainingDate) {
+      notify("יש לבחור תאריך אימון", true);
+      return;
+    }
 
-    if (payloadGrades.some((item) => Number.isNaN(item.grade) || item.grade < 0 || item.grade > 100)) {
+    const gradedSoldiers = soldiers
+      .filter((soldier) => {
+        const val = grades[soldier.id]?.grade;
+        return val !== undefined && val !== null && val !== "";
+      })
+      .map((soldier) => ({
+        soldierId: soldier.id,
+        grade: Number(grades[soldier.id].grade),
+      }));
+
+    if (gradedSoldiers.some((g) => g.grade < 0 || g.grade > 100)) {
       notify("יש להזין ציונים בין 0 ל-100", true);
       return;
     }
 
+    if (!gradedSoldiers.length) {
+      notify("יש להזין ציון לאחד לפחות", true);
+      return;
+    }
+
     await runSafely(async () => {
-      const result = await origamiClient.saveGrades({
+      await origamiClient.saveGrades({
+        typeId: selectedTypeId,
         unitId: commander.unitId,
-        trainingCompleted,
+        trainingDate,
         trainingNote: trainingNote.trim(),
-        grades: payloadGrades,
+        grades: gradedSoldiers,
       });
-      notify(`נשמרו ${result.saved || payloadGrades.length} ציונים`);
-      const allSoldiers = await origamiClient.getUngradedSoldiers({
-        sessionId: selectedSession.id,
-        unitId: commander.unitId,
-      });
-      // Re-seed grades map from updated server data
-      const refreshedGrades = {};
-      allSoldiers.forEach((s) => {
-        if (s.grade !== null && s.grade !== undefined) {
-          refreshedGrades[s.id] = { grade: String(s.grade), note: s.note || "" };
-        }
-      });
-      setSoldiers(allSoldiers);
-      setGrades(refreshedGrades);
+      notify("האימון נשמר בהצלחה");
+      setScreen("training");
     });
   }
 
@@ -177,6 +204,8 @@ export default function App() {
     setScreen("login");
     setLogin(emptyLogin);
     setCommander(null);
+    setTopics([]);
+    setSelectedTopicId("");
     setTrainingTypes([]);
     setSessions([]);
     setSoldiers([]);
@@ -216,31 +245,32 @@ export default function App() {
       {screen === "training" && commander && (
         <TrainingScreen
           commander={commander}
+          topics={topics}
+          selectedTopicId={selectedTopicId}
           trainingTypes={trainingTypes}
+          typesLoading={typesLoading}
           selectedTypeId={selectedTypeId}
-          sessions={sessions}
           sessionsLoading={sessionsLoading}
-          selectedSessionId={selectedSessionId}
           isBusy={isBusy}
           onLogout={logout}
+          onTopicChange={setSelectedTopicId}
           onTypeChange={setSelectedTypeId}
-          onSessionChange={setSelectedSessionId}
           onSubmit={openGradesScreen}
         />
       )}
 
-      {screen === "grades" && commander && selectedType && selectedSession && (
+      {screen === "grades" && commander && selectedType && (
         <GradesScreen
-          commander={commander}
-          selectedType={selectedType}
-          selectedSession={selectedSession}
+          topicName={selectedTopic?.name || ""}
+          trainingTypeName={selectedType.name}
+          unitName={commander.unitName}
           soldiers={soldiers}
           grades={grades}
-          trainingCompleted={trainingCompleted}
+          trainingDate={trainingDate}
           trainingNote={trainingNote}
           isBusy={isBusy}
           onBack={() => setScreen("training")}
-          onCompletedChange={setTrainingCompleted}
+          onTrainingDateChange={setTrainingDate}
           onTrainingNoteChange={setTrainingNote}
           onGradeChange={(soldierId, field, value) =>
             setGrades((current) => ({
@@ -264,25 +294,13 @@ function LoginScreen({ login, isBusy, onChange, onSubmit }) {
   return (
     <section className="screen is-active" aria-labelledby="login-title">
       <div className="brand">
-        <div className="brand-mark" aria-hidden="true">
-          S
-        </div>
-        <p className="eyebrow">SimplyINFRA</p>
+        <img src="/logo.png" alt="Simply+ RED" className="brand-logo" />
         <h1 id="login-title">התחברות מפקד</h1>
         <p>כניסה מאובטחת באמצעות קוד חד פעמי</p>
       </div>
 
       <form className="stack" onSubmit={onSubmit}>
-        <label>
-          <span>מספר אישי / ת.ז</span>
-          <input
-            value={login.commanderId}
-            inputMode="numeric"
-            autoComplete="username"
-            required
-            onChange={(event) => onChange((current) => ({ ...current, commanderId: event.target.value }))}
-          />
-        </label>
+
 
         <label>
           <span>מספר טלפון</span>
@@ -339,15 +357,16 @@ function OtpScreen({ otp, isBusy, onBack, onChange, onSubmit }) {
 
 function TrainingScreen({
   commander,
+  topics,
+  selectedTopicId,
   trainingTypes,
+  typesLoading,
   selectedTypeId,
-  sessions,
   sessionsLoading,
-  selectedSessionId,
   isBusy,
   onLogout,
+  onTopicChange,
   onTypeChange,
-  onSessionChange,
   onSubmit,
 }) {
   return (
@@ -364,39 +383,43 @@ function TrainingScreen({
 
       <form className="stack" onSubmit={onSubmit}>
         <label>
-          <span>סוג אימון</span>
-          <select value={selectedTypeId} required onChange={(event) => onTypeChange(event.target.value)}>
-            {trainingTypes.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>אימון ליחידה</span>
-          <select
-            value={selectedSessionId}
-            required
-            disabled={sessionsLoading || !sessions.length}
-            onChange={(event) => onSessionChange(event.target.value)}
-          >
-            {sessionsLoading ? (
-              <option value="">טוען אימונים...</option>
-            ) : sessions.length ? (
-              sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.name}
+          <span>נושא אימון</span>
+          <select value={selectedTopicId} required onChange={(event) => onTopicChange(event.target.value)}>
+            {topics.length ? (
+              topics.map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.name}
                 </option>
               ))
             ) : (
-              <option value="">אין אימונים זמינים</option>
+              <option value="">טוען נושאים...</option>
             )}
           </select>
         </label>
 
-        <button className="primary-button bottom-action" type="submit" disabled={isBusy || sessionsLoading}>
+        <label>
+          <span>סוג אימון</span>
+          <select
+            value={selectedTypeId}
+            required
+            disabled={typesLoading || !trainingTypes.length}
+            onChange={(event) => onTypeChange(event.target.value)}
+          >
+            {typesLoading ? (
+              <option value="">טוען סוגי אימון...</option>
+            ) : trainingTypes.length ? (
+              trainingTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))
+            ) : (
+              <option value="">אין סוגי אימון לנושא זה</option>
+            )}
+          </select>
+        </label>
+
+        <button className="primary-button bottom-action" type="submit" disabled={isBusy || sessionsLoading || typesLoading}>
           המשך להזנה
         </button>
       </form>
@@ -405,16 +428,16 @@ function TrainingScreen({
 }
 
 function GradesScreen({
-  commander,
-  selectedType,
-  selectedSession,
+  topicName,
+  trainingTypeName,
+  unitName,
   soldiers,
   grades,
-  trainingCompleted,
+  trainingDate,
   trainingNote,
   isBusy,
   onBack,
-  onCompletedChange,
+  onTrainingDateChange,
   onTrainingNoteChange,
   onGradeChange,
   onSubmit,
@@ -426,20 +449,24 @@ function GradesScreen({
           חזרה
         </button>
         <div>
-          <p className="eyebrow">{selectedType.name}</p>
-          <h2 id="grades-title">
-            {selectedSession.name}
-          </h2>
+          <p className="eyebrow">{topicName}</p>
+          <h2 id="grades-title">{trainingTypeName}</h2>
         </div>
       </header>
 
       <section className="summary-panel" aria-label="פרטי אימון">
-        <label className="switch-row">
-          <span>האימון הושלם?</span>
+        <label>
+          <span>שם מחלקה</span>
+          <input type="text" value={unitName} disabled readOnly />
+        </label>
+        <label>
+          <span>תאריך אימון</span>
           <input
-            checked={trainingCompleted}
-            type="checkbox"
-            onChange={(event) => onCompletedChange(event.target.checked)}
+            type="date"
+            value={trainingDate}
+            required
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(event) => onTrainingDateChange(event.target.value)}
           />
         </label>
         <label>
@@ -454,8 +481,8 @@ function GradesScreen({
       </section>
 
       <div className="list-heading">
-        <span>כל החיילים</span>
-        <strong>{soldiers.length}</strong>
+        <span>חיילים ({soldiers.length})</span>
+        <span className="muted-hint">ציון 0–100</span>
       </div>
 
       <form className="grades-form" onSubmit={onSubmit}>
@@ -470,12 +497,12 @@ function GradesScreen({
               />
             ))
           ) : (
-            <div className="summary-panel">אין חיילים שממתינים לציון באימון הזה.</div>
+            <div className="summary-panel">אין חיילים במחלקה זו.</div>
           )}
         </div>
 
         <button className="success-button bottom-action" type="submit" disabled={isBusy}>
-          שמירת ציונים
+          שמירת אימון
         </button>
       </form>
     </section>
@@ -496,20 +523,20 @@ function SoldierGradeCard({ soldier, value, onChange }) {
           max="100"
           inputMode="numeric"
           placeholder="ציון"
-          required
           value={value.grade}
-          onChange={(event) => onChange(soldier.id, "grade", event.target.value)}
+          onChange={(event) => {
+            const val = event.target.value;
+            if (val === "") {
+              onChange(soldier.id, "grade", val);
+              return;
+            }
+            const num = Number(val);
+            if (!Number.isNaN(num) && num >= 0 && num <= 100) {
+              onChange(soldier.id, "grade", val);
+            }
+          }}
         />
       </div>
-      <label>
-        <span>הערה לחייל</span>
-        <input
-          type="text"
-          placeholder="אופציונלי"
-          value={value.note || ""}
-          onChange={(event) => onChange(soldier.id, "note", event.target.value)}
-        />
-      </label>
     </article>
   );
 }

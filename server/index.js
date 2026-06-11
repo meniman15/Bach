@@ -18,18 +18,20 @@ try {
 }
 
 const ORIGAMI_BASE_URL = process.env.VITE_ORIGAMI_BASE_URL;
-const USERNAME         = process.env.VITE_ORIGAMI_USERNAME;
-const API_SECRET       = process.env.VITE_ORIGAMI_API_SECRET;
+const USERNAME = process.env.VITE_ORIGAMI_USERNAME;
+const API_SECRET = process.env.VITE_ORIGAMI_API_SECRET;
+const IS_DEV = process.env.DEV === "true";
 
 console.log("Loaded API_SECRET prefix:", API_SECRET?.slice(0, 10));
+console.log("DEV Mode Active:", IS_DEV);
 
-const ENTITY        = "e_163";
-const GROUP         = "g_304";
+const ENTITY = "e_163";
+const GROUP = "g_304";
 const FLD_UNIT_NAME = "fld_1774";
-const FLD_CMD_NAME  = "fld_1775";
-const FLD_PHONE     = "fld_1776";
-const FLD_CMD_ID    = "fld_1777";
-const FLD_OTP       = "fld_1778";
+const FLD_CMD_NAME = "fld_1775";
+const FLD_PHONE = "fld_1776";
+const FLD_CMD_ID = "fld_1777";
+const FLD_OTP = "fld_1778";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -54,14 +56,9 @@ function normalisePhone(p) {
   return String(p).replace(/\D/g, "").replace(/^0/, "972");
 }
 
-/**
- * Find a commander by ID + phone.
- * Returns { instanceId, fields } or null.
- */
-async function findCommander(commanderId, phone) {
+async function findCommanderByPhone(phone) {
   const res = await origamiPost("/entities/api/instance_data/format/json", {
     entity_data_name: ENTITY,
-    filters: [{ field: FLD_CMD_ID, value: commanderId, operator: "=" }],
   });
 
   if (!res.ok) throw new Error(`Origami query failed (${res.status})`);
@@ -69,19 +66,17 @@ async function findCommander(commanderId, phone) {
   if (json?.error) throw new Error(json.error.message || "Origami error");
 
   const instances = Array.isArray(json?.data) ? json.data : [];
-  const normPhone  = normalisePhone(phone);
+  const normPhone = normalisePhone(phone);
 
   for (const inst of instances) {
     const groups = inst.instance_data?.field_groups || [];
-    const group  = groups.find((g) => g.field_group_data?.group_data_name === GROUP);
+    const group = groups.find((g) => g.field_group_data?.group_data_name === GROUP);
     if (!group) continue;
 
-    // fields_data from reads comes back as array-of-arrays — flatten one level
     const fields = (group.fields_data || []).flat();
     const phoneField = fields.find((f) => f.field_data_name === FLD_PHONE);
-    if (!phoneField) continue;
 
-    const stored = phoneField.normalize?.normalize_full || normalisePhone(phoneField.value);
+    const stored = phoneField?.normalize?.normalize_full || normalisePhone(phoneField?.value);
     if (stored === normPhone) {
       return { instanceId: inst.instance_data._id, fields };
     }
@@ -118,25 +113,27 @@ async function updateInstanceFields(entityDataName, instanceId, fieldUpdates) {
 }
 
 // ------------------------------------------------------------------
-// POST /api/request-otp  { commanderId, phone }
+// POST /api/request-otp  { phone }
 // ------------------------------------------------------------------
 app.post("/api/request-otp", async (req, res) => {
-  const { commanderId, phone } = req.body || {};
-  if (!commanderId || !phone) {
-    return res.status(400).json({ error: "commanderId and phone are required" });
+  const { phone } = req.body || {};
+  if (!phone) {
+    return res.status(400).json({ error: "phone is required" });
   }
 
   try {
-    const commander = await findCommander(commanderId, phone);
+    const commander = await findCommanderByPhone(phone);
     if (!commander) {
-      return res.status(404).json({ error: "מפקד לא נמצא — בדוק מספר אישי ומספר טלפון" });
+      return res.status(404).json({ error: "מספר טלפון לא רשום" });
     }
 
     const otp = generateOtp();
-    console.log(`Generated OTP ${otp} for instance ${commander.instanceId}`);
-
-    await updateField(commander.instanceId, FLD_OTP, otp);
-
+    if (IS_DEV) {
+      console.log(`[DEBUG] DEV mode: Skipping writing OTP ${otp} to Origami for commander ${commander.instanceId}`);
+    } else {
+      await updateField(commander.instanceId, FLD_OTP, otp);
+    }
+ 
     return res.json({ ok: true });
   } catch (err) {
     console.error("request-otp error:", err.message);
@@ -145,36 +142,40 @@ app.post("/api/request-otp", async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// POST /api/verify-otp  { commanderId, phone, code }
+// POST /api/verify-otp  { phone, code }
 // ------------------------------------------------------------------
 app.post("/api/verify-otp", async (req, res) => {
-  const { commanderId, phone, code } = req.body || {};
-  if (!commanderId || !phone || !code) {
-    return res.status(400).json({ error: "commanderId, phone and code are required" });
+  const { phone, code } = req.body || {};
+  if (!phone || !code) {
+    return res.status(400).json({ error: "phone and code are required" });
   }
 
   try {
-    const commander = await findCommander(commanderId, phone);
+    const commander = await findCommanderByPhone(phone);
     if (!commander) {
-      return res.status(404).json({ error: "מפקד לא נמצא" });
+      return res.status(404).json({ error: "מספר טלפון לא רשום" });
     }
 
-    const otpField  = commander.fields.find((f) => f.field_data_name === FLD_OTP);
+    const otpField = commander.fields.find((f) => f.field_data_name === FLD_OTP);
     const storedOtp = String(otpField?.value || "").trim();
-    console.log(`Stored OTP: "${storedOtp}", provided: "${code.trim()}"`);
-
-    if (!storedOtp || storedOtp !== code.trim()) {
-      return res.status(401).json({ error: "קוד שגוי — נסה שוב" });
+    if (IS_DEV) {
+      console.log(`[DEBUG] DEV mode: Bypassing OTP check (stored: "${storedOtp}", provided: "${code.trim()}")`);
+    } else {
+      if (!storedOtp || storedOtp !== code.trim()) {
+        return res.status(401).json({ error: "קוד שגוי — נסה שוב" });
+      }
     }
 
-    const nameField     = commander.fields.find((f) => f.field_data_name === FLD_CMD_NAME);
+    const nameField = commander.fields.find((f) => f.field_data_name === FLD_CMD_NAME);
     const unitNameField = commander.fields.find((f) => f.field_data_name === FLD_UNIT_NAME);
+    const companyField = commander.fields.find((f) => f.field_data_name === "fld_1779");
 
     return res.json({
-      id:       commanderId,
-      name:     String(nameField?.value || commanderId),
-      unitId:   commander.instanceId,
+      id: phone,
+      name: String(nameField?.value || phone),
+      unitId: commander.instanceId,
       unitName: String(unitNameField?.value || ""),
+      companyId: companyField?.value?.instance_id || "",
     });
   } catch (err) {
     console.error("verify-otp error:", err.message);
@@ -183,27 +184,62 @@ app.post("/api/verify-otp", async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// GET /api/training-types
+// GET /api/topics  →  e_168 → g_310 → fld_1818
+// ------------------------------------------------------------------
+app.get("/api/topics", async (req, res) => {
+  try {
+    const origamiRes = await origamiPost("/entities/api/instance_data/format/json", {
+      entity_data_name: "e_168",
+    });
+    const json = await origamiRes.json();
+    if (json?.error) throw new Error(json.error.message || "Origami error");
+    const instances = Array.isArray(json?.data) ? json.data : [];
+    const topics = instances
+      .map((inst) => {
+        const groups = inst.instance_data?.field_groups || [];
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_310");
+        const fields = (group?.fields_data || []).flat();
+        const name = fields.find((f) => f.field_data_name === "fld_1818")?.value || "";
+        return { id: inst.instance_data._id, name: String(name) };
+      })
+      .filter((t) => t.name);
+    return res.json(topics);
+  } catch (err) {
+    console.error("topics error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------
+// GET /api/training-types?topicId=<e_168 instance id>
+// Returns e_165 instances whose fld_1819 points to the given topic.
 // ------------------------------------------------------------------
 app.get("/api/training-types", async (req, res) => {
+  const { topicId } = req.query;
   try {
     const origamiRes = await origamiPost("/entities/api/instance_data/format/json", {
       entity_data_name: "e_165",
     });
-
     const json = await origamiRes.json();
     if (json?.error) throw new Error(json.error.message || "Origami error");
-
     const instances = Array.isArray(json?.data) ? json.data : [];
-    console.log("training-types raw first instance:", JSON.stringify(instances[0]?.instance_data, null, 2));
-    const types = instances.map((inst) => {
-      const groups = inst.instance_data?.field_groups || [];
-      const group  = groups.find((g) => g.field_group_data?.group_data_name === "g_306");
-      const fields = (group?.fields_data || []).flat();
-      const name   = fields.find((f) => f.field_data_name === "fld_1784")?.value || "";
-      return { id: inst.instance_data._id, name: String(name) };
-    });
-
+    const types = instances
+      .filter((inst) => {
+        if (!topicId) return true;
+        const groups = inst.instance_data?.field_groups || [];
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_306");
+        const fields = (group?.fields_data || []).flat();
+        const topicField = fields.find((f) => f.field_data_name === "fld_1819");
+        return topicField?.value?.instance_id === topicId;
+      })
+      .map((inst) => {
+        const groups = inst.instance_data?.field_groups || [];
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_306");
+        const fields = (group?.fields_data || []).flat();
+        const name = fields.find((f) => f.field_data_name === "fld_1784")?.value || "";
+        return { id: inst.instance_data._id, name: String(name) };
+      })
+      .filter((t) => t.name);
     return res.json(types);
   } catch (err) {
     console.error("training-types error:", err.message);
@@ -228,22 +264,82 @@ app.get("/api/training-sessions", async (req, res) => {
     const sessions = instances
       .filter((inst) => {
         const groups = inst.instance_data?.field_groups || [];
-        const group  = groups.find((g) => g.field_group_data?.group_data_name === "g_307");
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_307");
         const fields = (group?.fields_data || []).flat();
         const typeField = fields.find((f) => f.field_data_name === "fld_1786");
         return typeField?.value?.instance_id === typeId;
       })
       .map((inst) => {
         const groups = inst.instance_data?.field_groups || [];
-        const group  = groups.find((g) => g.field_group_data?.group_data_name === "g_307");
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_307");
         const fields = (group?.fields_data || []).flat();
-        const name   = fields.find((f) => f.field_data_name === "fld_1787")?.value || "";
+        const name = fields.find((f) => f.field_data_name === "fld_1787")?.value || "";
         return { id: inst.instance_data._id, name: String(name) };
       });
 
     return res.json(sessions);
   } catch (err) {
     console.error("training-sessions error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------
+// GET /api/unit-soldiers?unitId=<e_163 instance id>
+// Returns all soldiers (e_164) whose fld_1783 (מחלקה) points to the
+// given commander/unit instance.
+// ------------------------------------------------------------------
+app.get("/api/unit-soldiers", async (req, res) => {
+  const { unitId } = req.query;
+  console.log(`[DEBUG] /api/unit-soldiers called with unitId: "${unitId}"`);
+  if (!unitId) return res.status(400).json({ error: "unitId is required" });
+
+  if (IS_DEV && unitId === "6a2a6f570c43abe8f70aa44d") {
+    const mockSoldiers = [];
+    for (let i = 1; i <= 30; i++) {
+      mockSoldiers.push({
+        id: `mock_boxer_${i}`,
+        name: `חייל ${i} (בוקסר)`,
+        personalNumber: `80000${String(i).padStart(2, '0')}`
+      });
+    }
+    console.log(`[DEBUG] DEV mode: returning 30 mock soldiers for unit 'בוקסר' (${unitId})`);
+    return res.json(mockSoldiers);
+  }
+
+  try {
+    const origamiRes = await origamiPost("/entities/api/instance_data/format/json", {
+      entity_data_name: "e_164",
+      limit: 5000,
+    });
+    const json = await origamiRes.json();
+    if (json?.error) throw new Error(json.error.message || "Origami error");
+
+    const instances = Array.isArray(json?.data) ? json.data : [];
+    console.log(`[DEBUG] /api/unit-soldiers fetched ${instances.length} soldiers total from Origami`);
+
+    const soldiers = instances
+      .filter((inst) => {
+        const groups = inst.instance_data?.field_groups || [];
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_305");
+        const fields = (group?.fields_data || []).flat();
+        const unitField = fields.find((f) => f.field_data_name === "fld_1783");
+        const match = unitField?.value?.instance_id === unitId;
+        return match;
+      })
+      .map((inst) => {
+        const groups = inst.instance_data?.field_groups || [];
+        const group = groups.find((g) => g.field_group_data?.group_data_name === "g_305");
+        const fields = (group?.fields_data || []).flat();
+        const name = fields.find((f) => f.field_data_name === "fld_1780")?.value || "";
+        const idNum = fields.find((f) => f.field_data_name === "fld_1781")?.value || "";
+        return { id: inst.instance_data._id, name: String(name), personalNumber: String(idNum) };
+      });
+
+    console.log(`[DEBUG] /api/unit-soldiers returning ${soldiers.length} filtered soldiers for unitId "${unitId}"`);
+    return res.json(soldiers);
+  } catch (err) {
+    console.error("unit-soldiers error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -308,9 +404,9 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
     for (const inst of allSoldiers) {
       const id = inst.instance_data?._id;
       const groups = inst.instance_data?.field_groups || [];
-      const group  = groups.find((g) => g.field_group_data?.group_data_name === "g_305");
+      const group = groups.find((g) => g.field_group_data?.group_data_name === "g_305");
       const fields = (group?.fields_data || []).flat();
-      const name   = fields.find((f) => f.field_data_name === "fld_1780")?.value || "";
+      const name = fields.find((f) => f.field_data_name === "fld_1780")?.value || "";
       if (id) nameMap[id] = String(name);
     }
 
@@ -330,31 +426,64 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
   }
 });
 
-app.post("/api/save-grades", async (req, res) => {
-  const { sessionId, grades, trainingNote } = req.body || {};
-  if (!sessionId || !Array.isArray(grades) || !grades.length) {
-    return res.status(400).json({ error: "sessionId and grades are required" });
+// ------------------------------------------------------------------
+// POST /api/create-training-record
+// Creates a new e_166 instance with main fields + repeatable soldier rows.
+// Body: { typeId, unitId, trainingDate (YYYY-MM-DD), trainingNote, grades: [{soldierId, grade}] }
+// ------------------------------------------------------------------
+app.post("/api/create-training-record", async (req, res) => {
+  const { typeId, unitId, trainingDate, trainingNote, grades } = req.body || {};
+  if (!typeId || !unitId || !trainingDate || !Array.isArray(grades) || !grades.length) {
+    return res.status(400).json({ error: "typeId, unitId, trainingDate and grades are required" });
   }
 
   try {
-    let saved = 0;
+    // Convert YYYY-MM-DD to DD/MM/YYYY (Origami custom validation expects d/m/Y format)
+    const [y, m, d] = trainingDate.split("-");
+    const formattedDate = `${d}/${m}/${y}`;
+ 
+    // Build the form_data according to the Origami API spec
+    const formData = [
+      {
+        group_data_name: "g_307", // Main group
+        data: [
+          {
+            fld_1786: typeId,         // סוג אימון (select-from-entity)
+            fld_1809: unitId,         // מחלקה (select-from-entity)
+            fld_1788: formattedDate,  // תאריך אימון (d/m/Y format)
+            fld_1789: (typeof trainingNote === "string" ? trainingNote.trim() : "") || "", // הערות
+          }
+        ]
+      }
+    ];
+ 
+    // Repeatable group g_309: one row per soldier
+    const realGrades = IS_DEV
+      ? grades.filter(({ soldierId }) => !String(soldierId).startsWith("mock_"))
+      : grades;
 
-    for (const { grade, groupIndex } of grades) {
-      const updateJson = await updateInstanceFields("e_166", sessionId, [
-        ["fld_1800", String(grade), groupIndex],
-      ]);
-      saved += updateJson.results?.fields_updated_total || 0;
+    if (realGrades.length > 0) {
+      formData.push({
+        group_data_name: "g_309",
+        data: realGrades.map(({ soldierId, grade }) => ({
+          fld_1798: soldierId,     // חייל (select-from-entity)
+          fld_1800: String(grade), // ציון
+        }))
+      });
     }
+ 
+    const createRes = await origamiPost("/entities/api/create_instance/format/json", {
+      entity_data_name: "e_166",
+      form_data: formData,
+    });
+    const json = await createRes.json();
+    console.log("create-training-record response:", JSON.stringify(json));
 
-    if (typeof trainingNote === "string" && trainingNote.trim()) {
-      await updateInstanceFields("e_166", sessionId, [["fld_1789", trainingNote.trim(), 0]]);
-    }
+    if (json?.error) throw new Error(json.error.message || "Create failed");
 
-    if (saved === 0) throw new Error("לא עודכנו ציונים");
-
-    return res.json({ saved });
+    return res.json({ ok: true, instanceId: json?.results?._id || json?.data?._id || json?.instance_id || null });
   } catch (err) {
-    console.error("save-grades error:", err.message);
+    console.error("create-training-record error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 });

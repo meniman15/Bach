@@ -10,21 +10,21 @@ const seedData = {
   commander: { id: "1234567", name: "לירון", unitId: "unit-1", unitName: "מחלקה 1" },
   trainingTypes: [
     { id: "shooting", name: "קליעה" },
-    { id: "fitness",  name: "כושר קרבי" },
-    { id: "combat",   name: "קרב מגע" },
+    { id: "fitness", name: "כושר קרבי" },
+    { id: "combat", name: "קרב מגע" },
   ],
   sessions: [
-    { id: "range-1",    typeId: "shooting", unitId: "unit-1", name: "מטווח 1", soldiers: ["s-1", "s-2"] },
-    { id: "range-night",typeId: "shooting", unitId: "unit-1", name: "מטווח לילה", soldiers: ["s-2", "s-3", "s-4"] },
-    { id: "run-3k",     typeId: "fitness",  unitId: "unit-1", name: "ריצת 3 ק״מ", soldiers: ["s-1", "s-3", "s-5"] },
-    { id: "check-07",   typeId: "combat",   unitId: "unit-1", name: "צ׳ק 07", soldiers: ["s-4", "s-5"] },
+    { id: "range-1", typeId: "shooting", unitId: "unit-1", name: "מטווח 1", soldiers: ["s-1", "s-2"] },
+    { id: "range-night", typeId: "shooting", unitId: "unit-1", name: "מטווח לילה", soldiers: ["s-2", "s-3", "s-4"] },
+    { id: "run-3k", typeId: "fitness", unitId: "unit-1", name: "ריצת 3 ק״מ", soldiers: ["s-1", "s-3", "s-5"] },
+    { id: "check-07", typeId: "combat", unitId: "unit-1", name: "צ׳ק 07", soldiers: ["s-4", "s-5"] },
   ],
   soldiers: [
-    { id: "s-1", name: "אביב לוי",   personalNumber: "8123456", unitId: "unit-1" },
-    { id: "s-2", name: "דניאל עמר",  personalNumber: "8234567", unitId: "unit-1" },
-    { id: "s-3", name: "עומר כהן",   personalNumber: "8345678", unitId: "unit-1" },
+    { id: "s-1", name: "אביב לוי", personalNumber: "8123456", unitId: "unit-1" },
+    { id: "s-2", name: "דניאל עמר", personalNumber: "8234567", unitId: "unit-1" },
+    { id: "s-3", name: "עומר כהן", personalNumber: "8345678", unitId: "unit-1" },
     { id: "s-4", name: "נועם ביטון", personalNumber: "8456789", unitId: "unit-1" },
-    { id: "s-5", name: "איתי פרץ",   personalNumber: "8567890", unitId: "unit-1" },
+    { id: "s-5", name: "איתי פרץ", personalNumber: "8567890", unitId: "unit-1" },
   ],
 };
 
@@ -45,46 +45,46 @@ class OrigamiClient {
 
   async _proxyPost(path, body) {
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  // Safely parse response body, handling empty responses
-  let json = {};
-  const text = await res.text();
-  if (text) {
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      // If parsing fails, retain empty object
-      json = {};
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    // Safely parse response body, handling empty responses
+    let json = {};
+    const text = await res.text();
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        // If parsing fails, retain empty object
+        json = {};
+      }
     }
+    if (!res.ok) throw new Error(json.error || `שגיאת שרת (${res.status})`);
+    return json;
   }
-  if (!res.ok) throw new Error(json.error || `שגיאת שרת (${res.status})`);
-  return json;
-}
 
   // -------------------------------------------------------------------------
   // Auth
   // -------------------------------------------------------------------------
 
-  async requestOtp({ commanderId, phone }) {
+  async requestOtp({ phone }) {
     if (!(await this._isServerAvailable())) {
       // Dev fallback — no server running
       sessionStorage.setItem("pendingCommander", JSON.stringify(seedData.commander));
       return { ok: true };
     }
-    return this._proxyPost("/request-otp", { commanderId, phone });
+    return this._proxyPost("/request-otp", { phone });
   }
 
-  async verifyOtp({ commanderId, phone, code }) {
+  async verifyOtp({ phone, code }) {
     if (!(await this._isServerAvailable())) {
       // Dev fallback — accept any code
       const raw = sessionStorage.getItem("pendingCommander");
       return raw ? JSON.parse(raw) : seedData.commander;
     }
-    const commander = await this._proxyPost("/verify-otp", { commanderId, phone, code });
+    const commander = await this._proxyPost("/verify-otp", { phone, code });
     return commander;
   }
 
@@ -92,9 +92,20 @@ class OrigamiClient {
   // Training data (seed until Origami tables are ready)
   // -------------------------------------------------------------------------
 
-  async getTrainingTypes() {
+  async getTopics() {
+    if (!(await this._isServerAvailable())) return [];
+    const res = await fetch(`${API_BASE}/topics`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "שגיאה בטעינת נושאים");
+    return json;
+  }
+
+  async getTrainingTypes({ topicId } = {}) {
     if (!(await this._isServerAvailable())) return seedData.trainingTypes;
-    const res = await fetch(`${API_BASE}/training-types`);
+    const url = topicId
+      ? `${API_BASE}/training-types?topicId=${encodeURIComponent(topicId)}`
+      : `${API_BASE}/training-types`;
+    const res = await fetch(url);
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "שגיאה בטעינת סוגי אימון");
     return json;
@@ -109,6 +120,16 @@ class OrigamiClient {
     const res = await fetch(`${API_BASE}/training-sessions?typeId=${encodeURIComponent(typeId)}`);
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "שגיאה בטעינת אימונים");
+    return json;
+  }
+
+  async getUnitSoldiers({ unitId }) {
+    if (!(await this._isServerAvailable())) {
+      return seedData.soldiers.filter((s) => s.unitId === unitId);
+    }
+    const res = await fetch(`${API_BASE}/unit-soldiers?unitId=${encodeURIComponent(unitId)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "שגיאה בטעינת חיילים");
     return json;
   }
 
@@ -158,30 +179,23 @@ class OrigamiClient {
     }));
   }
 
-  async saveGrades(payload) {
+  async saveGrades({ typeId, unitId, trainingDate, trainingNote, grades }) {
     if (!(await this._isServerAvailable())) {
+      // Offline fallback: persist locally
       const existing = this._readLocalGrades();
       localStorage.setItem(
         this.storageKey,
-        JSON.stringify([...existing, ...payload.grades]),
+        JSON.stringify([...existing, ...grades]),
       );
-      return { saved: payload.grades.length };
+      return { ok: true };
     }
-    const res = await fetch(`${API_BASE}/save-grades`, {
+    const res = await fetch(`${API_BASE}/create-training-record`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: payload.grades[0]?.sessionId,
-        trainingNote: payload.trainingNote,
-        grades: payload.grades.map((g) => ({
-          soldierId: g.soldierId,
-          grade: g.grade,
-          groupIndex: g.groupIndex,
-        })),
-      }),
+      body: JSON.stringify({ typeId, unitId, trainingDate, trainingNote, grades }),
     });
     const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "שגיאה בשמירת ציונים");
+    if (!res.ok) throw new Error(json.error || "שגיאה בשמירת האימון");
     return json;
   }
 
