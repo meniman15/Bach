@@ -1,6 +1,6 @@
 # Bach — Training Grades App
 
-A mobile-first web application that allows military unit supervisors to record and manage training grades for their soldiers, backed by the [Origami](https://www.origami.ms/) low-code platform.
+A mobile-first web application that allows military unit supervisors to record and manage training grades for their soldiers, backed by the [Origami](https://www.origami.ms/) no-code platform.
 
 ---
 
