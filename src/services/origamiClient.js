@@ -35,14 +35,12 @@ class OrigamiClient {
   }
 
   async _isServerAvailable() {
-    if (this._serverAvailable !== null) return this._serverAvailable;
     try {
       const res = await fetch(`${API_BASE}/health`);
-      this._serverAvailable = res.ok;
+      return res.ok;
     } catch {
-      this._serverAvailable = false;
+      return false;
     }
-    return this._serverAvailable;
   }
 
   async _proxyPost(path, body) {
@@ -115,21 +113,49 @@ class OrigamiClient {
   }
 
   async getUngradedSoldiers({ sessionId, unitId }) {
+    // Retrieve all soldiers for the session and merge any saved grades
+    const saved = this._readLocalGrades();
+    const savedMap = new Map();
+    saved.forEach(g => {
+      if (g.sessionId === sessionId) {
+        savedMap.set(g.soldierId, { grade: g.grade, note: g.note, recordedAt: g.recordedAt });
+      }
+    });
+
+    // Offline fallback using seed data
     if (!(await this._isServerAvailable())) {
-      const saved = this._readLocalGrades();
-      const gradedIds = new Set(
-        saved.filter((g) => g.sessionId === sessionId).map((g) => g.soldierId),
-      );
       const session = seedData.sessions.find((s) => s.id === sessionId);
       const sessionSoldierIds = new Set(session?.soldiers || []);
-      return seedData.soldiers.filter(
-        (s) => s.unitId === unitId && sessionSoldierIds.has(s.id) && !gradedIds.has(s.id),
+      const allSoldiers = seedData.soldiers.filter(
+        (s) => s.unitId === unitId && sessionSoldierIds.has(s.id),
       );
+      // Attach grades if they exist
+      return allSoldiers.map((s) => ({
+        ...s,
+        ...(savedMap.get(s.id) || {}),
+      }));
     }
+
+    // Online: fetch all soldiers for the session (the endpoint now returns all rows with grades)
     const res = await fetch(`${API_BASE}/ungraded-soldiers?sessionId=${encodeURIComponent(sessionId)}`);
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "שגיאה בטעינת חיילים");
-    return json;
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      // If Not Found (404), assume no soldiers and return empty list
+      if (res.status === 404) {
+        return [];
+      }
+      // Otherwise extract error message
+      const errorText = contentType.includes('application/json')
+        ? (await res.json()).error || await res.text()
+        : await res.text();
+      throw new Error(errorText || "שגיאה בטעינת חיילים");
+    }
+    const json = contentType.includes('application/json') ? await res.json() : [];
+    // Merge grades
+    return json.map((s) => ({
+      ...s,
+      ...(savedMap.get(s.id) || {}),
+    }));
   }
 
   async saveGrades(payload) {

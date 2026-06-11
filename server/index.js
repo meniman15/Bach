@@ -250,6 +250,7 @@ app.get("/api/training-sessions", async (req, res) => {
 
 app.get("/api/ungraded-soldiers", async (req, res) => {
   const { sessionId } = req.query;
+  console.log("[ungraded-soldiers] sessionId:", sessionId);
   if (!sessionId) return res.status(400).json({ error: "sessionId is required" });
 
   try {
@@ -275,7 +276,6 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
     rows.forEach((row) => {
       const gradeField = row.find((f) => f.field_data_name === "fld_1800");
       const gradeValue = gradeField?.value;
-      if (gradeValue !== "" && gradeValue !== null && gradeValue !== undefined) return;
 
       const soldierField = row.find((f) => f.field_data_name === "fld_1798");
       const instanceId = soldierField?.value?.instance_id;
@@ -284,6 +284,10 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
         soldierInstanceIds.push({
           instanceId,
           groupIndex: typeof dbGroupIndex === "number" ? dbGroupIndex : 0,
+          // Include existing grade if already recorded
+          grade: (gradeValue !== "" && gradeValue !== null && gradeValue !== undefined)
+            ? Number(gradeValue)
+            : null,
         });
       }
     });
@@ -310,12 +314,13 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
       if (id) nameMap[id] = String(name);
     }
 
-    const soldiers = soldierInstanceIds.map(({ instanceId, groupIndex }) => ({
+    const soldiers = soldierInstanceIds.map(({ instanceId, groupIndex, grade }) => ({
       id: instanceId,
       name: nameMap[instanceId] || instanceId,
       personalNumber: instanceId,
       unitId: null,
       groupIndex,
+      grade,
     }));
 
     return res.json(soldiers);

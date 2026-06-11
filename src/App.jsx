@@ -107,12 +107,19 @@ export default function App() {
     }
 
     await runSafely(async () => {
-      const ungradedSoldiers = await origamiClient.getUngradedSoldiers({
+      const allSoldiers = await origamiClient.getUngradedSoldiers({
         sessionId: selectedSession.id,
         unitId: commander.unitId,
       });
-      setSoldiers(ungradedSoldiers);
-      setGrades({});
+      setSoldiers(allSoldiers);
+      // Pre-populate grades map with any grade the server already has
+      const initialGrades = {};
+      allSoldiers.forEach((s) => {
+        if (s.grade !== null && s.grade !== undefined) {
+          initialGrades[s.id] = { grade: String(s.grade), note: s.note || "" };
+        }
+      });
+      setGrades(initialGrades);
       setTrainingCompleted(false);
       setTrainingNote("");
       setScreen("grades");
@@ -150,12 +157,19 @@ export default function App() {
         grades: payloadGrades,
       });
       notify(`נשמרו ${result.saved || payloadGrades.length} ציונים`);
-      const ungradedSoldiers = await origamiClient.getUngradedSoldiers({
+      const allSoldiers = await origamiClient.getUngradedSoldiers({
         sessionId: selectedSession.id,
         unitId: commander.unitId,
       });
-      setSoldiers(ungradedSoldiers);
-      setGrades({});
+      // Re-seed grades map from updated server data
+      const refreshedGrades = {};
+      allSoldiers.forEach((s) => {
+        if (s.grade !== null && s.grade !== undefined) {
+          refreshedGrades[s.id] = { grade: String(s.grade), note: s.note || "" };
+        }
+      });
+      setSoldiers(allSoldiers);
+      setGrades(refreshedGrades);
     });
   }
 
@@ -440,7 +454,7 @@ function GradesScreen({
       </section>
 
       <div className="list-heading">
-        <span>חיילים ללא ציון</span>
+        <span>כל החיילים</span>
         <strong>{soldiers.length}</strong>
       </div>
 
