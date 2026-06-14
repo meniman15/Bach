@@ -24,6 +24,8 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const [typesLoading, setTypesLoading] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(true);
+  const [lessonName, setLessonName] = useState("");
 
   const selectedTopic = useMemo(
     () => topics.find((topic) => topic.id === selectedTopicId),
@@ -142,6 +144,11 @@ export default function App() {
       return;
     }
 
+    if (!trainingDate) {
+      notify("יש לבחור תאריך אימון", true);
+      return;
+    }
+
     await runSafely(async () => {
       const allSoldiers = await origamiClient.getUnitSoldiers({
         unitId: commander.unitId,
@@ -149,7 +156,8 @@ export default function App() {
       setSoldiers(allSoldiers);
       setGrades({});
       setTrainingNote("");
-      setTrainingDate(new Date().toISOString().slice(0, 10));
+      setIsCompleted(true);
+      setLessonName("");
       setScreen("grades");
     });
   }
@@ -162,28 +170,33 @@ export default function App() {
       return;
     }
 
-    if (!trainingDate) {
-      notify("יש לבחור תאריך אימון", true);
+    if (!lessonName.trim()) {
+      notify("יש להזין שם שיעור", true);
       return;
     }
 
     const gradedSoldiers = soldiers
       .filter((soldier) => {
         const val = grades[soldier.id]?.grade;
-        return val !== undefined && val !== null && val !== "";
+        const note = grades[soldier.id]?.note;
+        return (val !== undefined && val !== null && val !== "") || (note && note.trim() !== "");
       })
-      .map((soldier) => ({
-        soldierId: soldier.id,
-        grade: Number(grades[soldier.id].grade),
-      }));
+      .map((soldier) => {
+        const val = grades[soldier.id]?.grade;
+        return {
+          soldierId: soldier.id,
+          grade: (val !== undefined && val !== null && val !== "") ? Number(val) : null,
+          note: grades[soldier.id]?.note || "",
+        };
+      });
 
-    if (gradedSoldiers.some((g) => g.grade < 0 || g.grade > 100)) {
+    if (gradedSoldiers.some((g) => g.grade !== null && (g.grade < 0 || g.grade > 100))) {
       notify("יש להזין ציונים בין 0 ל-100", true);
       return;
     }
 
     if (!gradedSoldiers.length) {
-      notify("יש להזין ציון לאחד לפחות", true);
+      notify("יש להזין ציון או הערה לאחד לפחות", true);
       return;
     }
 
@@ -193,6 +206,7 @@ export default function App() {
         unitId: commander.unitId,
         trainingDate,
         trainingNote: trainingNote.trim(),
+        lessonName: lessonName.trim(),
         grades: gradedSoldiers,
       });
       notify("האימון נשמר בהצלחה");
@@ -251,10 +265,12 @@ export default function App() {
           typesLoading={typesLoading}
           selectedTypeId={selectedTypeId}
           sessionsLoading={sessionsLoading}
+          trainingDate={trainingDate}
           isBusy={isBusy}
           onLogout={logout}
           onTopicChange={setSelectedTopicId}
           onTypeChange={setSelectedTypeId}
+          onTrainingDateChange={setTrainingDate}
           onSubmit={openGradesScreen}
         />
       )}
@@ -266,12 +282,14 @@ export default function App() {
           unitName={commander.unitName}
           soldiers={soldiers}
           grades={grades}
-          trainingDate={trainingDate}
           trainingNote={trainingNote}
+          isCompleted={isCompleted}
+          lessonName={lessonName}
           isBusy={isBusy}
           onBack={() => setScreen("training")}
-          onTrainingDateChange={setTrainingDate}
           onTrainingNoteChange={setTrainingNote}
+          onIsCompletedChange={setIsCompleted}
+          onLessonNameChange={setLessonName}
           onGradeChange={(soldierId, field, value) =>
             setGrades((current) => ({
               ...current,
@@ -292,30 +310,34 @@ export default function App() {
 
 function LoginScreen({ login, isBusy, onChange, onSubmit }) {
   return (
-    <section className="screen is-active" aria-labelledby="login-title">
+    <section className="screen login-screen is-active" aria-labelledby="login-title">
       <div className="brand">
         <img src="/logo.png" alt="Simply+ RED" className="brand-logo" />
         <h1 id="login-title">התחברות מפקד</h1>
         <p>כניסה מאובטחת באמצעות קוד חד פעמי</p>
       </div>
 
-      <form className="stack" onSubmit={onSubmit}>
+      <form className="login-form" onSubmit={onSubmit}>
+        <div className="login-field-area">
+          <label>
+            <span>מספר טלפון</span>
+            <input
+              value={login.phone}
+              type="tel"
+              dir="rtl"
+              autoComplete="tel"
+              placeholder="הזן מספר נייד"
+              required
+              onChange={(event) => onChange((current) => ({ ...current, phone: event.target.value }))}
+            />
+          </label>
+        </div>
 
-
-        <label>
-          <span>מספר טלפון</span>
-          <input
-            value={login.phone}
-            type="tel"
-            autoComplete="tel"
-            required
-            onChange={(event) => onChange((current) => ({ ...current, phone: event.target.value }))}
-          />
-        </label>
-
-        <button className="primary-button" type="submit" disabled={isBusy}>
-          שלח קוד התחברות
-        </button>
+        <div className="login-button-area">
+          <button className="primary-button" type="submit" disabled={isBusy}>
+            שלח קוד התחברות
+          </button>
+        </div>
       </form>
     </section>
   );
@@ -347,7 +369,7 @@ function OtpScreen({ otp, isBusy, onBack, onChange, onSubmit }) {
           />
         </label>
 
-        <button className="primary-button" type="submit" disabled={isBusy}>
+        <button className="primary-button bottom-action" type="submit" disabled={isBusy}>
           כניסה למערכת
         </button>
       </form>
@@ -363,25 +385,31 @@ function TrainingScreen({
   typesLoading,
   selectedTypeId,
   sessionsLoading,
+  trainingDate,
   isBusy,
   onLogout,
   onTopicChange,
   onTypeChange,
+  onTrainingDateChange,
   onSubmit,
 }) {
+  const parts = [];
+  if (commander.unitName) parts.push(`מחלקה ${commander.unitName}`);
+  if (commander.companyName) parts.push(`פלוגה ${commander.companyName}`);
+  const unitInfo = parts.join(" | ");
+
   return (
     <section className="screen is-active" aria-labelledby="training-title">
-      <header className="top-bar">
-        <div>
-          <p className="eyebrow">{greetingText(commander.name)}</p>
-          <h2 id="training-title">בחירת אימון</h2>
+      <header className="training-header">
+        <div className="training-greeting-row">
+          <h2 id="training-title" className="training-greeting">
+            {greetingText(commander.name)} {greetingEmoji()}
+          </h2>
         </div>
-        <button className="icon-button" type="button" aria-label="התנתקות" onClick={onLogout}>
-          ⎋
-        </button>
+        {unitInfo && <p className="training-unit-info">{unitInfo}</p>}
       </header>
 
-      <form className="stack" onSubmit={onSubmit}>
+      <form className="stack training-form" onSubmit={onSubmit}>
         <label>
           <span>נושא אימון</span>
           <select value={selectedTopicId} required onChange={(event) => onTopicChange(event.target.value)}>
@@ -419,6 +447,17 @@ function TrainingScreen({
           </select>
         </label>
 
+        <label>
+          <span>תאריך אימון</span>
+          <input
+            type="date"
+            value={trainingDate}
+            required
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(event) => onTrainingDateChange(event.target.value)}
+          />
+        </label>
+
         <button className="primary-button bottom-action" type="submit" disabled={isBusy || sessionsLoading || typesLoading}>
           המשך להזנה
         </button>
@@ -433,51 +472,60 @@ function GradesScreen({
   unitName,
   soldiers,
   grades,
-  trainingDate,
   trainingNote,
+  isCompleted,
+  lessonName,
   isBusy,
   onBack,
-  onTrainingDateChange,
   onTrainingNoteChange,
+  onIsCompletedChange,
+  onLessonNameChange,
   onGradeChange,
   onSubmit,
 }) {
   return (
     <section className="screen grades-screen is-active" aria-labelledby="grades-title">
-      <header className="top-bar compact">
-        <button className="ghost-button" type="button" onClick={onBack}>
-          חזרה
+      <header className="grades-header">
+        <button className="back-link" type="button" onClick={onBack}>
+          חזרה 👉
         </button>
-        <div>
-          <p className="eyebrow">{topicName}</p>
-          <h2 id="grades-title">{trainingTypeName}</h2>
-        </div>
+        <h2 id="grades-title" className="grades-title">
+          {trainingTypeName}
+        </h2>
       </header>
 
       <section className="summary-panel" aria-label="פרטי אימון">
-        <label>
-          <span>שם מחלקה</span>
-          <input type="text" value={unitName} disabled readOnly />
-        </label>
-        <label>
-          <span>תאריך אימון</span>
+        <div className="toggle-row">
+          <span className="toggle-label">האם בוצע?</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={isCompleted}
+              onChange={(event) => onIsCompletedChange(event.target.checked)}
+            />
+            <span className="slider round"></span>
+          </label>
+        </div>
+        
+        <div className="field-group">
+          <span className="field-label">שם השיעור</span>
           <input
-            type="date"
-            value={trainingDate}
+            type="text"
+            className="lesson-name-field"
+            value={lessonName}
+            placeholder="הזן שם שיעור..."
             required
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(event) => onTrainingDateChange(event.target.value)}
+            onChange={(event) => onLessonNameChange(event.target.value)}
           />
-        </label>
-        <label>
-          <span>הערה כללית</span>
-          <textarea
-            value={trainingNote}
-            rows={2}
-            placeholder="הערה לאימון"
-            onChange={(event) => onTrainingNoteChange(event.target.value)}
-          />
-        </label>
+        </div>
+
+        <textarea
+          className="training-notes-field"
+          value={trainingNote}
+          rows={1}
+          placeholder="הערות לאימון..."
+          onChange={(event) => onTrainingNoteChange(event.target.value)}
+        />
       </section>
 
       <div className="list-heading">
@@ -513,8 +561,15 @@ function SoldierGradeCard({ soldier, value, onChange }) {
   return (
     <article className="soldier-card">
       <div className="soldier-row">
-        <div>
+        <div className="soldier-info">
           <div className="soldier-name">{soldier.name}</div>
+          <input
+            className="soldier-note-input"
+            type="text"
+            placeholder="הערה לחייל..."
+            value={value.note || ""}
+            onChange={(event) => onChange(soldier.id, "note", event.target.value)}
+          />
         </div>
         <input
           className="grade-input"
@@ -552,5 +607,14 @@ function Toast({ toast }) {
 function greetingText(name) {
   const hour = new Date().getHours();
   const part = hour < 12 ? "בוקר טוב" : hour < 18 ? "צהריים טובים" : "ערב טוב";
-  return `${part}, ${name}`;
+  const firstName = name.split(" ")[0];
+  return `${part}, ${firstName}`;
+}
+
+function greetingEmoji() {
+  const hour = new Date().getHours();
+  if (hour < 6)  return "🌙"; // night
+  if (hour < 12) return "☀️"; // morning
+  if (hour < 18) return "🌤️"; // afternoon
+  return "🌙"; // evening
 }

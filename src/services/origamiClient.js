@@ -179,7 +179,7 @@ class OrigamiClient {
     }));
   }
 
-  async saveGrades({ typeId, unitId, trainingDate, trainingNote, grades }) {
+  async saveGrades({ typeId, unitId, trainingDate, trainingNote, lessonName, grades }) {
     if (!(await this._isServerAvailable())) {
       // Offline fallback: persist locally
       const existing = this._readLocalGrades();
@@ -192,7 +192,7 @@ class OrigamiClient {
     const res = await fetch(`${API_BASE}/create-training-record`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ typeId, unitId, trainingDate, trainingNote, grades }),
+      body: JSON.stringify({ typeId, unitId, trainingDate, trainingNote, lessonName, grades }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "שגיאה בשמירת האימון");

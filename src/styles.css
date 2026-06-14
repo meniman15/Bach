@@ -1,13 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap');
+
 :root {
   color-scheme: light;
-  --blue: #0047ab;
+  --blue: #0A4ECB;
   --blue-dark: #003982;
   --green: #187044;
-  --ink: #172033;
-  --muted: #697386;
-  --line: #dde4ee;
+  --ink: #1E293B;
+  --muted: #64748B;
+  --line: #CBD5E1;
   --surface: #ffffff;
-  --page: #eef3f8;
+  --page: #F4F7FC;
   --soft: #f6f8fb;
   --danger: #b42318;
 }
@@ -19,9 +21,13 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--page);
+  background: #E8EDF3;
   color: var(--ink);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: 'Rubik', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
 }
 
 button,
@@ -37,68 +43,139 @@ select:disabled {
   opacity: 0.68;
 }
 
+/* ── Phone frame ── */
 .app-shell {
   position: relative;
-  min-height: 100vh;
-  background: var(--surface);
+  width: 375px;
+  min-height: 760px;
+  height: 760px;
+  background: #F4F7FC;
+  border-radius: 48px;
+  border: 8px solid #1E293B;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.12);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  direction: rtl;
+}
+
+/* On mobile, fill the viewport naturally */
+@media (max-width: 480px) {
+  body {
+    padding: 0;
+    align-items: stretch;
+    background: var(--page);
+  }
+
+  .app-shell {
+    width: 100%;
+    min-height: 100vh;
+    height: auto;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
 }
 
 .screen {
   display: none;
-  min-height: 100vh;
-  padding: 28px 20px 20px;
+  flex-direction: column;
+  flex: 1;
+  padding: 28px 24px 28px;
+  min-height: 0;
 }
 
 .screen.is-active {
   display: flex;
-  flex-direction: column;
 }
 
+/* ── Login brand block ── */
 .brand {
-  margin: auto 0 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
+  padding-top: 52px;
+  padding-bottom: 28px;
 }
 
 .brand-logo {
   display: block;
-  width: 120px;
+  width: 200px;
   height: auto;
   margin: 0 auto 24px;
-  border-radius: 24px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  border-radius: 20px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+  padding: 12px;
+  background: #fff;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .brand-logo:hover {
-  transform: scale(1.06);
+  transform: scale(1.04);
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .eyebrow {
   margin: 0 0 4px;
   color: var(--blue);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-h1,
-h2,
-p {
-  margin-top: 0;
+/* ── Login screen layout ── */
+.login-screen {
+  padding: 0;
 }
 
-h1,
-h2 {
-  margin-bottom: 8px;
-  font-size: 26px;
-  line-height: 1.15;
+.login-screen .brand {
+  padding: 52px 24px 24px;
 }
 
-p {
-  color: var(--muted);
+/* Form fills the rest of the screen */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 0 24px;
 }
 
+/* Field area sits right below the brand */
+.login-field-area {
+  padding-top: 4px;
+}
+
+/* Button is pushed to the very bottom, same horizontal padding as the rest */
+.login-button-area {
+  margin-top: auto;
+  padding-bottom: 28px;
+  padding-top: 16px;
+}
+
+
+/* ── Generic vertical stack ── */
 .stack {
   display: flex;
   flex: 1;
@@ -106,20 +183,46 @@ p {
   gap: 18px;
 }
 
+/* ── Training Screen Styles ── */
+.training-header {
+  text-align: right;
+  margin-bottom: 48px;
+  padding-top: 12px;
+  direction: rtl;
+}
+
+.training-greeting {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+}
+
+.training-unit-info {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 0;
+}
+
+.training-form {
+  gap: 32px;
+}
+
+
 label {
   display: grid;
   gap: 8px;
-  color: #3b4558;
-  font-size: 13px;
-  font-weight: 750;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
   background: #fff;
   color: var(--ink);
   outline: none;
@@ -127,8 +230,18 @@ textarea {
 
 input,
 select {
-  min-height: 52px;
-  padding: 0 14px;
+  min-height: 54px;
+  padding: 0 16px;
+  font-size: 16px;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748B' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: left 16px center;
+  background-repeat: no-repeat;
+  background-size: 22px;
+  padding-left: 40px;
 }
 
 textarea {
@@ -140,21 +253,30 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgb(0 71 171 / 12%);
+  box-shadow: 0 0 0 3px rgb(10 78 203 / 14%);
 }
+
+input::placeholder,
+textarea::placeholder {
+  color: #A8B4C2;
+  font-weight: 400;
+}
+
 
 button {
   border: 0;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .primary-button,
 .success-button {
   width: 100%;
-  min-height: 54px;
-  border-radius: 8px;
+  min-height: 52px;
+  border-radius: 12px;
   color: #fff;
+  font-size: 16px;
+  box-shadow: 0 4px 6px -1px rgba(10, 78, 203, 0.18);
 }
 
 .primary-button {
@@ -177,7 +299,7 @@ button {
 
 .back-button {
   align-self: start;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .top-bar {
@@ -185,7 +307,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 26px;
+  margin-bottom: 24px;
 }
 
 .top-bar.compact {
@@ -195,66 +317,31 @@ button {
 
 .icon-button {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 22px;
+  border-radius: 10px;
+  font-size: 20px;
 }
 
 .bottom-action {
   margin-top: auto;
 }
 
+/* ── Grades screen ── */
 .grades-screen {
-  gap: 14px;
-  padding-bottom: 14px;
+  gap: 12px;
+  padding-bottom: 16px;
 }
 
 .summary-panel {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--soft);
-}
-
-.switch-row {
-  grid-template-columns: 1fr auto;
-  align-items: center;
-}
-
-.switch-row input {
-  appearance: none;
-  position: relative;
-  width: 48px;
-  height: 28px;
-  min-height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: #c9d3df;
-}
-
-.switch-row input::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  border-radius: 12px;
   background: #fff;
-  transition: transform 160ms ease;
-}
-
-.switch-row input:checked {
-  background: var(--blue);
-}
-
-.switch-row input:checked::after {
-  transform: translateX(-20px);
 }
 
 .list-heading {
@@ -263,7 +350,8 @@ button {
   justify-content: space-between;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
+  padding: 0 2px;
 }
 
 .list-heading strong {
@@ -278,38 +366,73 @@ button {
 }
 
 .soldiers-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  max-height: 100%;
   gap: 10px;
   overflow-y: auto;
   padding-bottom: 12px;
 }
 
 .soldier-card {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
   background: #fff;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .soldier-row {
-  display: grid;
-  grid-template-columns: 1fr 84px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
+  width: 100%;
 }
 
 .soldier-name {
-  font-weight: 850;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.soldier-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.soldier-note-input {
+  width: 90%;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  font-size: 13px;
+  background: #F8FAFC;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.soldier-note-input:focus {
+  border-color: var(--blue);
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgb(10 78 203 / 8%);
 }
 
 .grade-input {
+  width: 68px;
+  min-height: 44px;
+  padding: 0 8px;
   text-align: center;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
 
+/* ── Toast ── */
 .toast {
   position: fixed;
   right: 16px;
@@ -317,11 +440,12 @@ button {
   left: 16px;
   display: none;
   padding: 14px 16px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--ink);
   color: #fff;
   text-align: center;
-  font-weight: 750;
+  font-weight: 700;
+  z-index: 100;
 }
 
 .toast.is-visible {
@@ -332,21 +456,164 @@ button {
   background: var(--danger);
 }
 
-@media (min-width: 520px) {
-  body {
-    display: grid;
-    place-items: center;
-    padding: 24px;
-  }
+.muted-hint {
+  color: var(--muted);
+}
 
-  .app-shell {
-    width: 390px;
-    min-height: 780px;
-    border-radius: 24px;
-    box-shadow: 0 24px 70px rgb(23 32 51 / 18%);
-  }
+/* ── Page heading (OTP screen) ── */
+.page-heading {
+  margin-bottom: 28px;
+}
 
-  .screen {
-    min-height: 780px;
-  }
+/* ── Updated Grades Screen Header & Card Toggle ── */
+.grades-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+  position: relative;
+  padding-top: 8px;
+  direction: rtl;
+}
+
+.back-link {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  background: transparent;
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.grades-title {
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  margin-top: 36px;
+  color: var(--ink);
+  width: 100%;
+  line-height: 1.35;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  direction: rtl;
+  margin-bottom: 12px;
+}
+
+.toggle-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Rounded toggle switch styling */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #CBD5E1;
+  transition: .2s ease;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .2s ease;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #10B981;
+}
+
+input:checked + .slider:before {
+  transform: translateX(22px);
+}
+
+.training-notes-field {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--ink);
+  resize: none;
+  background: #fff;
+  outline: none;
+  text-align: right;
+  direction: rtl;
+}
+
+.training-notes-field:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgb(10 78 203 / 10%);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  direction: rtl;
+  text-align: right;
+  margin-bottom: 12px;
+}
+
+.field-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lesson-name-field {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  padding: 0 14px;
+  font-size: 15px;
+  color: var(--ink);
+  background: #fff;
+  outline: none;
+  text-align: right;
+  direction: rtl;
+}
+
+.lesson-name-field:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgb(10 78 203 / 10%);
 }

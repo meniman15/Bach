@@ -32,6 +32,7 @@ const FLD_CMD_NAME = "fld_1775";
 const FLD_PHONE = "fld_1776";
 const FLD_CMD_ID = "fld_1777";
 const FLD_OTP = "fld_1778";
+const FLD_COMPANY = "fld_1779";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -168,14 +169,20 @@ app.post("/api/verify-otp", async (req, res) => {
 
     const nameField = commander.fields.find((f) => f.field_data_name === FLD_CMD_NAME);
     const unitNameField = commander.fields.find((f) => f.field_data_name === FLD_UNIT_NAME);
-    const companyField = commander.fields.find((f) => f.field_data_name === "fld_1779");
+    const companyField = commander.fields.find((f) => f.field_data_name === FLD_COMPANY);
+
+    // fld_1779 is a plain text field containing the company (פלוגה) name
+    const companyRaw = companyField?.value;
+    const companyName = typeof companyRaw === "string"
+      ? companyRaw
+      : (companyRaw?.text || companyRaw?.instance_text || companyRaw?.name || "");
 
     return res.json({
       id: phone,
       name: String(nameField?.value || phone),
       unitId: commander.instanceId,
       unitName: String(unitNameField?.value || ""),
-      companyId: companyField?.value?.instance_id || "",
+      companyName: String(companyName),
     });
   } catch (err) {
     console.error("verify-otp error:", err.message);
@@ -432,7 +439,7 @@ app.get("/api/ungraded-soldiers", async (req, res) => {
 // Body: { typeId, unitId, trainingDate (YYYY-MM-DD), trainingNote, grades: [{soldierId, grade}] }
 // ------------------------------------------------------------------
 app.post("/api/create-training-record", async (req, res) => {
-  const { typeId, unitId, trainingDate, trainingNote, grades } = req.body || {};
+  const { typeId, unitId, trainingDate, trainingNote, lessonName, grades } = req.body || {};
   if (!typeId || !unitId || !trainingDate || !Array.isArray(grades) || !grades.length) {
     return res.status(400).json({ error: "typeId, unitId, trainingDate and grades are required" });
   }
@@ -452,6 +459,7 @@ app.post("/api/create-training-record", async (req, res) => {
             fld_1809: unitId,         // מחלקה (select-from-entity)
             fld_1788: formattedDate,  // תאריך אימון (d/m/Y format)
             fld_1789: (typeof trainingNote === "string" ? trainingNote.trim() : "") || "", // הערות
+            fld_1787: (typeof lessonName === "string" ? lessonName.trim() : "") || "",     // שם השיעור
           }
         ]
       }
@@ -465,10 +473,18 @@ app.post("/api/create-training-record", async (req, res) => {
     if (realGrades.length > 0) {
       formData.push({
         group_data_name: "g_309",
-        data: realGrades.map(({ soldierId, grade }) => ({
-          fld_1798: soldierId,     // חייל (select-from-entity)
-          fld_1800: String(grade), // ציון
-        }))
+        data: realGrades.map(({ soldierId, grade, note }) => {
+          const row = {
+            fld_1798: soldierId,
+          };
+          if (grade !== null && grade !== undefined && grade !== "") {
+            row.fld_1800 = String(grade);
+          }
+          if (note) {
+            row.fld_1823 = String(note).trim();
+          }
+          return row;
+        })
       });
     }
  
